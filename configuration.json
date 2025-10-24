@@ -1,0 +1,36 @@
+{
+    "tickets_groups": {
+        "NDXT_30": [
+        "APP",
+        "MSFT",
+        "CTSH",
+        "GOOG",
+        "GOOGL",
+        "INTU",
+        "CDW",
+        "TRI",
+        "QCOM",
+        "FB",
+        "PANW",
+        "PDD",
+        "SHOP",
+        "AVGO",
+        "CRWD",
+        "NVDA",
+        "DDOG",
+        "ASML",
+        "AAPL",
+        "ADI",
+        "GFS",
+        "DASH",
+        "AMAT",
+        "KLAC",
+        "AMD",
+        "LRCX",
+        "ON",
+        "PLTR",
+        "MSTR",
+        "TXN"
+		]
+    }
+}
