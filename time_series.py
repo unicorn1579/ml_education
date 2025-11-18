@@ -51,12 +51,8 @@ class TimeSeriesTransformer(BaseEstimator, TransformerMixin):
         """
         data_transformed = self.data_prepared(data)
         data_transformed = self.time_column_transformed(data_transformed)
-        data_transformed = self.frequency_transformed(data_transformed)
-        print(data_transformed)
-        print(data_transformed[data_transformed.isna().any(axis=1)])
-        print(data[self.processed_columns].mean())
-        print(pd.infer_freq(data.index))
         data_transformed = self.missing_transformed(data_transformed)
+        data_transformed = self.frequency_transformed(data_transformed)
         data_transformed = self.outliers_transformed(data_transformed)
         return data_transformed
 
@@ -77,42 +73,6 @@ class TimeSeriesTransformer(BaseEstimator, TransformerMixin):
         data = data.set_index(self.time_column).sort_index()
         return data
 
-    def frequency_transformed(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Определяет и преобразовывает гранулярность
-        """
-        # Пробуем определить частоту автоматически
-        self.frequency = pd.infer_freq(data.index)
-        if self.frequency is None:
-            # Частота не определена, можно попробовать найти "моду" разниц между датами
-            deltas = data.index.to_series().diff().dropna()
-            freq = deltas.mode()[0]  # наиболее часто встречающийся интервал
-            # Преобразуем в строку формата pandas
-            self.frequency = pd.tseries.frequencies.to_offset(freq).freqstr
-            data = data.asfreq(self.frequency)
-
-        current_offset = to_offset(self.frequency)
-        target_offset = to_offset(self.target_frequency)
-
-        # Частота уменьшается
-        if self.target_frequency and target_offset > current_offset:
-            if self.frequency_method == 'mean':
-                data = data[self.processed_columns].resample(self.target_frequency).mean()
-            elif self.frequency_method == 'sum':
-                data = data[self.processed_columns].resample(self.target_frequency).sum()
-            else:
-                data = data[self.processed_columns].resample(self.target_frequency).mean()
-        # Частота увеличивается
-        elif self.target_frequency and target_offset <= current_offset:
-            if self.frequency_method == 'ffill':
-                data = data[self.processed_columns].resample(self.target_frequency).ffill()
-            elif self.frequency_method == 'bfill':
-                data = data[self.processed_columns].resample(self.target_frequency).bfill()
-            else:
-                data = data[self.processed_columns].resample(self.target_frequency).ffill()
-        print('rerere',pd.infer_freq(data.index))
-        return data
-
     def missing_transformed(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Преобразовывает пропуски
@@ -127,6 +87,45 @@ class TimeSeriesTransformer(BaseEstimator, TransformerMixin):
             data[self.processed_columns] = data[self.processed_columns].fillna(
                 data[self.processed_columns].rolling(self.rolling_window, min_periods=1).mean()
             )
+        return data
+
+    def frequency_transformed(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Определяет и преобразовывает гранулярность
+        """
+        # Пробуем определить частоту автоматически
+        self.frequency = pd.infer_freq(data.index)
+        if self.frequency is None:
+            # Частота не определена, можно попробовать найти "моду" разниц между датами
+            deltas = data.index.to_series().diff().dropna()
+            freq = deltas.mode()[0]  # наиболее часто встречающийся интервал
+            # Преобразуем в строку формата pandas
+            self.frequency = pd.tseries.frequencies.to_offset(freq).freqstr
+            #data = data.asfreq(self.frequency)
+        current_offset = to_offset(self.frequency)
+        target_offset = to_offset(self.target_frequency)
+
+        # Частота уменьшается
+        if self.target_frequency and target_offset > current_offset:
+            if self.frequency_method == 'mean':
+                data = data[self.processed_columns].resample(self.target_frequency).mean()
+            elif self.frequency_method == 'sum':
+                data = data[self.processed_columns].resample(self.target_frequency).sum()
+            else:
+                data = data[self.processed_columns].resample(self.target_frequency).mean()
+        # Частота увеличивается
+        elif self.target_frequency and target_offset <= current_offset:
+            res = data[self.processed_columns].resample(self.target_frequency)
+            if self.frequency_method == 'ffill':
+                data = res.ffill().bfill()
+            elif self.frequency_method == 'bfill':
+                data = res.bfill().ffill()
+            else:
+                data = data[self.processed_columns].resample(self.target_frequency).ffill()
+        # Гарантируем отсутствие пропусков
+        if data[self.processed_columns].isna().any().any():
+            # fallback, если остались NaN
+            data[self.processed_columns] = data[self.processed_columns].ffill().bfill()
         return data
 
     def outliers_transformed(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -244,10 +243,10 @@ class TimeSeries:
             column_decomposed = seasonal_decompose(
                 self.data_transformed[column],model=self.decompose_model,period=self.decompose_period
             )
-            column_decomposed[f"{column}__observed"] = column_decomposed.observed
-            column_decomposed[f"{column}__trend"] = column_decomposed.trend
-            column_decomposed[f"{column}__seasonal"] = column_decomposed.seasonal
-            column_decomposed[f"{column}__resid"] = column_decomposed.resid
+            data_decomposed[f"{column}__observed"] = column_decomposed.observed
+            data_decomposed[f"{column}__trend"] = column_decomposed.trend
+            data_decomposed[f"{column}__seasonal"] = column_decomposed.seasonal
+            data_decomposed[f"{column}__resid"] = column_decomposed.resid
         self.data_decomposed = pd.DataFrame(data_decomposed)
 
 
@@ -262,22 +261,15 @@ class TimeSeries:
 
         for ax, column in zip(axes, self.processed_columns):
             ax.plot(
-                self.data[self.time_column],
-                self.data[column],
-                label="Исходные данные",
-                color="blue",
-                linewidth=2
-            )
-            ax.plot(
-                self.data_transformed[self.time_column],
+                self.data_transformed.index,
                 self.data_transformed[column],
-                label="Преобразованные данные",
+                label="Наблюдаемые данные",
                 color="orange",
                 linewidth=2,
                 linestyle="--"
             )
             ax.plot(
-                self.data_decomposed[self.time_column],
+                self.data_transformed.index,
                 self.data_decomposed[f"{column}__trend"],
                 label="Тренд",
                 color="green",
@@ -285,7 +277,7 @@ class TimeSeries:
                 linestyle="--"
             )
             ax.plot(
-                self.data_decomposed[self.time_column],
+                self.data_transformed.index,
                 self.data_decomposed[f"{column}__seasonal"],
                 label="Сезонная компонента",
                 color="black",
@@ -293,7 +285,7 @@ class TimeSeries:
                 linestyle="--"
             )
             ax.plot(
-                self.data_decomposed[self.time_column],
+                self.data_transformed.index,
                 self.data_decomposed[f"{column}__resid"],
                 label="Остаток",
                 color="purple",
@@ -307,6 +299,6 @@ class TimeSeries:
             ax.legend(fontsize=10)
 
         axes[-1].set_xlabel("Дата", fontsize=11)
-        fig.suptitle("Исходные, преобразованные и разложенные данные временного ряда", fontsize=15, y=0.99)
+        fig.suptitle("Разложение данных временного ряда", fontsize=15, y=0.99)
         plt.tight_layout(rect=[0, 0, 1, 0.97])
         plt.show()

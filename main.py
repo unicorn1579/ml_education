@@ -54,8 +54,8 @@ def main() -> None:
     )
 
     # После обработки визуализируем
-    #for ts in time_series:
-    #    ts.show()
+    for ts in time_series:
+        ts.show()
 
 if __name__ == '__main__':
     main()
