@@ -1,9 +1,9 @@
 {
     "tickets_groups": {
-        "NDXT_30": [
-        "A"
+        "NDXT_1": [
+        "APP"
 		],
-        "NDXT_301": [
+        "NDXT_30": [
         "APP",
         "MSFT",
         "CTSH",

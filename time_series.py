@@ -101,7 +101,6 @@ class TimeSeriesTransformer(BaseEstimator, TransformerMixin):
             freq = deltas.mode()[0]  # наиболее часто встречающийся интервал
             # Преобразуем в строку формата pandas
             self.frequency = pd.tseries.frequencies.to_offset(freq).freqstr
-            #data = data.asfreq(self.frequency)
         current_offset = to_offset(self.frequency)
         target_offset = to_offset(self.target_frequency)
 
@@ -299,6 +298,6 @@ class TimeSeries:
             ax.legend(fontsize=10)
 
         axes[-1].set_xlabel("Дата", fontsize=11)
-        fig.suptitle("Разложение данных временного ряда", fontsize=15, y=0.99)
+        fig.suptitle(f"Разложение данных временного ряда {self.file_name}", fontsize=15, y=0.99)
         plt.tight_layout(rect=[0, 0, 1, 0.97])
         plt.show()
