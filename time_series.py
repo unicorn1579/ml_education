@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 from statsmodels.tsa.seasonal import seasonal_decompose
 import xgboost as xgb
 
@@ -160,9 +160,40 @@ class ModelMetadata:
     """
     model_type: str = None
     model: LinearRegression = None
-    y_test: List[float] = None
-    y_prediction: List[float] = None
+    y_test: pd.Series = None
+    y_prediction: pd.Series = None
     metrics: Dict[str, float] = None
+    time_column: str = None
+
+    def show(self, metric_name: str = 'FA_WAPE') -> None:
+        """
+        Визуализирует модель
+        """
+        if metric_name is None:
+            metrics_str = ", ".join(
+                f"{name}={value:.5f}" for name, value in self.metrics.items()
+            )
+        else:
+            metrics_str = f"{metric_name}={self.metrics[metric_name]:.5f}"
+
+        plt.plot(self.y_test.index, self.y_test, color="black", alpha=0.5, label="Observed")
+        plt.plot(
+            self.y_test.index,
+            self.y_prediction,
+            color="red",
+            label=f"Predicted ({metrics_str})"
+        )
+
+        plt.title(self.model_type)
+        plt.grid(True)
+        plt.legend()
+
+        if self.time_column:
+            plt.xlabel(self.time_column)
+
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.show()
 
 @dataclass
 class TimeSeries:
@@ -380,7 +411,7 @@ class TimeSeries:
             selected_features = significant.index.tolist() + ["observed"]
             self.data_processed_columns[column] = self.data_processed_columns[column][selected_features]
 
-    def rolling_models(self, train_ratio: float = 0.9, n_runs: int = 10):
+    def rolling_models(self, train_ratio: float = 0.9, n_runs: int = 10) -> None:
         self.models_metadata = dict()
         for column in self.processed_columns:
             self.models_metadata[column] = list()
@@ -395,8 +426,8 @@ class TimeSeries:
             for i in range(n_runs):
                 # граница train-выборки
                 end_train = train_size + i * step
-                train = data.iloc[:end_train]#.dropna()
-                test = data.iloc[end_train:end_train + step]#.dropna()
+                train = data.iloc[:end_train]
+                test = data.iloc[end_train:end_train + step]
 
                 if len(train) == 0 or len(test) == 0:
                     continue
@@ -417,9 +448,16 @@ class TimeSeries:
                     ModelMetadata(
                         model_type='LinearRegression',
                         model=model,
+                        time_column=self.time_column,
                         y_test=y_test,
                         y_prediction=y_prediction,
-                        metrics={"MAE": mean_absolute_error(y_test, y_prediction)}
+                        metrics={
+                            "MAE": mean_absolute_error(y_test, y_prediction),
+                            "MAPE": mean_absolute_percentage_error(y_test, y_prediction),
+                            "WAPE": np.sum(np.abs(y_test - y_prediction)) / np.sum(y_test),
+                            "FA_MAPE": 1 - mean_absolute_percentage_error(y_test, y_prediction),
+                            "FA_WAPE": 1 - np.sum(np.abs(y_test - y_prediction)) / np.sum(y_test)
+                        }
                     )
                 )
 
@@ -447,21 +485,29 @@ class TimeSeries:
                     ModelMetadata(
                         model_type='XGBRegressor',
                         model=model,
+                        time_column=self.time_column,
                         y_test=y_test,
                         y_prediction=y_prediction,
-                        metrics={"MAE": mean_absolute_error(y_test, y_prediction)}
+                        metrics={
+                            "MAE": mean_absolute_error(y_test, y_prediction),
+                            "MAPE": mean_absolute_percentage_error(y_test, y_prediction),
+                            "WAPE": np.sum(np.abs(y_test - y_prediction)) / np.sum(y_test),
+                            "FA_MAPE": 1 - mean_absolute_percentage_error(y_test, y_prediction),
+                            "FA_WAPE": 1 - np.sum(np.abs(y_test - y_prediction)) / np.sum(y_test)
+                        }
                     )
                 )
 
-    def show_metric(self, column_name: str, metric_name: str = 'MAE'):
+    def show_metric(self, column_name: str) -> None:
         n_models = len(self.models_metadata[column_name])
         fig, axes = plt.subplots(n_models, 1, figsize=(15, 3 * n_models), sharex=True)
-        results = [(model_metadata.model_type, model_metadata.y_test, model_metadata.y_prediction, model_metadata.metrics[metric_name])
+        results = [(model_metadata.model_type, model_metadata.y_test, model_metadata.y_prediction, model_metadata.metrics)
                    for model_metadata in self.models_metadata[column_name]]
 
-        for ax, (model_type, y_test, y_prediction, metric) in zip(axes, results):
+        for ax, (model_type, y_test, y_prediction, metrics) in zip(axes, results):
+            metrics_str = ",\n".join(f"{name}={value:.5f}" for name, value in metrics.items())
             ax.plot(y_test.index, y_test, color="black", alpha=0.5, label="Observed")
-            ax.plot(y_test.index, y_prediction, color="red", label=f"Predicted ({metric_name}={metric:.2f})")
+            ax.plot(y_test.index, y_prediction, color="red", label=f"Predicted ({metrics_str})")
             ax.set_title(model_type)
             ax.grid(True)
             ax.legend()
@@ -469,3 +515,16 @@ class TimeSeries:
         plt.xlabel(self.time_column)
         plt.tight_layout()
         plt.show()
+
+    def get_effective_model(self, column_name: str, metric_name: str = 'MAE') -> ModelMetadata:
+        effective_model = None
+
+        for model_metadata in self.models_metadata[column_name]:
+            if not effective_model:
+                effective_model = model_metadata
+            else:
+                if metric_name == 'MAE' and model_metadata.metrics[metric_name] < effective_model.metrics[metric_name]:
+                    effective_model = model_metadata
+
+        return effective_model
+
