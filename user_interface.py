@@ -20,6 +20,14 @@ class InputParams(NamedTuple):
     z_threshold: float = None
     decompose_model: str = None
     decompose_period: str = None
+    n_estimators: int = None
+    max_depth: int = None
+    learning_rate: float = None
+    subsample: float = None
+    colsample_bytree: float = None
+    random_state: int = None
+    eval_metric: str = None
+    early_stopping_rounds: int = None
 
 def process_cli() -> InputParams:
     """
@@ -118,7 +126,15 @@ def process_cli() -> InputParams:
         rolling_window=args.rolling_window,
         z_threshold=args.z_threshold,
         decompose_model=args.decompose_model,
-        decompose_period=args.decompose_period
+        decompose_period=args.decompose_period,
+        n_estimators=args.n_estimators,
+        max_depth=args.max_depth,
+        learning_rate=args.learning_rate,
+        subsample=args.subsample,
+        colsample_bytree=args.colsample_bytree,
+        random_state=args.random_state,
+        eval_metric=args.eval_metric,
+        early_stopping_rounds=args.early_stopping_rounds
     )
 
     return params

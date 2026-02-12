@@ -153,18 +153,64 @@ class ModelMetadata:
 
     Args:
         model_type (str): тип модели
-        model (LinearRegression): модель
+        model (LinearRegression | XGBRegressor): модель
         y_test (): тестовый набор данных
         y_prediction (): спрогнозированный набор данных
         metrics (Dict[str, float]): метрики качества модели
     """
     model_type: str = None
     model: LinearRegression = None
+    x: pd.DataFrame = None
+    y: pd.Series = None  
+    x_test: pd.DataFrame = None
     y_test: pd.Series = None
     y_prediction: pd.Series = None
     metrics: Dict[str, float] = None
     time_column: str = None
 
+    def predict(self, x_data: pd.DataFrame, y_data: pd.Series, metric_name: str = 'FA_MAPE') -> None:
+        """
+        Прогноз
+        """
+        y_prediction = self.model.predict(x_data)
+        metrics={
+            "MAE": mean_absolute_error(y_data, y_prediction),
+            "MAPE": mean_absolute_percentage_error(y_data, y_prediction),
+            "WAPE": np.sum(np.abs(y_data - y_prediction)) / np.sum(y_data),
+            "FA_MAPE": 1 - mean_absolute_percentage_error(y_data, y_prediction),
+            "FA_WAPE": 1 - np.sum(np.abs(y_data - y_prediction)) / np.sum(y_data)
+        }
+                        
+        if metric_name is None:
+            test_metrics_str = ", ".join(
+                f"{name}={value:.5f}" for name, value in self.metrics.items()
+            )
+            valid_metrics_str = ", ".join(
+                f"{name}={value:.5f}" for name, value in metrics.items()
+            )
+        else:
+            test_metrics_str = f"{metric_name}={self.metrics[metric_name]:.5f}"
+            valid_metrics_str = f"{metric_name}={metrics[metric_name]:.5f}"
+
+        plt.plot(y_data.index,y_data, color="black", alpha=0.5, label="Observed")
+        plt.plot(
+            y_data.index,
+            y_prediction,
+            color="red",
+            label=f"Predicted (test_{test_metrics_str}, valid_{valid_metrics_str})"
+        )
+
+        plt.title(self.model_type)
+        plt.grid(True)
+        plt.legend()
+
+        if self.time_column:
+            plt.xlabel(self.time_column)
+
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.show()
+        
     def show(self, metric_name: str = 'FA_WAPE') -> None:
         """
         Визуализирует модель
@@ -250,6 +296,15 @@ class TimeSeries:
     correlation_threshold: float = 0.3
 
     models_metadata: Dict[str, List[ModelMetadata]] = None
+
+    n_estimators: int = 500
+    max_depth: int = 5
+    learning_rate: float = 0.1
+    subsample: float = 0.8
+    colsample_bytree: float = 0.8
+    random_state: int = 42
+    eval_metric: str = "mae"
+    early_stopping_rounds: int = 20
 
     def __post_init__(self):
         if self.file_name and self.file_extension:
@@ -417,6 +472,8 @@ class TimeSeries:
             self.models_metadata[column] = list()
 
             data = self.data_processed_columns[column].dropna()
+            x = data.drop(columns=["observed"])
+            y = data["observed"]
             # размер тестового окна
             train_size = int(len(data) * train_ratio)
             step = (len(data) - train_size) // n_runs
@@ -449,7 +506,10 @@ class TimeSeries:
                         model_type='LinearRegression',
                         model=model,
                         time_column=self.time_column,
+                        x_test=x_test,
                         y_test=y_test,
+                        x=x,
+                        y=y,
                         y_prediction=y_prediction,
                         metrics={
                             "MAE": mean_absolute_error(y_test, y_prediction),
@@ -463,16 +523,16 @@ class TimeSeries:
 
                 # XGBRegressor
                 model = xgb.XGBRegressor(
-                    n_estimators=500,
-                    max_depth=5,
-                    learning_rate=0.1,
-                    subsample=0.8,
-                    colsample_bytree=0.8,
-                    random_state=42,
-                    eval_metric="mae",
-                    early_stopping_rounds=20
+                    n_estimators=self.n_estimators,
+                    max_depth=self.max_depth,
+                    learning_rate=self.learning_rate,
+                    subsample=self.subsample,
+                    colsample_bytree=self.colsample_bytree,
+                    random_state=self.random_state,
+                    eval_metric=self.eval_metric,
+                    early_stopping_rounds=self.early_stopping_rounds
                 )
-
+                model
                 model.fit(
                     x_train, y_train,
                     eval_set=[(x_test, y_test)],
@@ -486,7 +546,10 @@ class TimeSeries:
                         model_type='XGBRegressor',
                         model=model,
                         time_column=self.time_column,
+                        x_test=x_test,
                         y_test=y_test,
+                        x=x,
+                        y=y,
                         y_prediction=y_prediction,
                         metrics={
                             "MAE": mean_absolute_error(y_test, y_prediction),

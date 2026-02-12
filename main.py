@@ -44,7 +44,15 @@ def main() -> None:
         rolling_window=params.rolling_window,
         z_threshold=params.z_threshold,
         decompose_model=params.decompose_model,
-        decompose_period=params.decompose_period
+        decompose_period=params.decompose_period,
+        n_estimators=params.n_estimators,
+        max_depth=params.max_depth,
+        learning_rate=params.learning_rate,
+        subsample=params.subsample,
+        colsample_bytree=params.colsample_bytree,
+        random_state=params.random_state,
+        eval_metric=params.eval_metric,
+        early_stopping_rounds=params.early_stopping_rounds
     )
 
     # Параллельная обработка временных рядов
