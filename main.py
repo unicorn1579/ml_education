@@ -52,7 +52,10 @@ def main() -> None:
         colsample_bytree=params.colsample_bytree,
         random_state=params.random_state,
         eval_metric=params.eval_metric,
-        early_stopping_rounds=params.early_stopping_rounds
+        early_stopping_rounds=params.early_stopping_rounds,
+        train_ratio=params.train_ratio,
+        cv_method=params.cv_method,
+        cv_freq=params.cv_freq
     )
 
     # Параллельная обработка временных рядов

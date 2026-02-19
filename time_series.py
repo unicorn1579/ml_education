@@ -305,6 +305,10 @@ class TimeSeries:
     random_state: int = 42
     eval_metric: str = "mae"
     early_stopping_rounds: int = 20
+    
+    train_ratio: float = 0.9
+    cv_method: str = "expanding"
+    cv_freq: str = "Q"
 
     def __post_init__(self):
         if self.file_name and self.file_extension:
@@ -421,6 +425,7 @@ class TimeSeries:
         axes[-1].set_xlabel("Дата", fontsize=11)
         fig.suptitle(f"Разложение данных временного ряда {self.file_name}", fontsize=15, y=0.99)
         plt.tight_layout(rect=[0, 0, 1, 0.97])
+        plt.xticks(rotation=45)
         plt.show()
 
     def features_generation(self) -> None:
@@ -466,28 +471,36 @@ class TimeSeries:
             selected_features = significant.index.tolist() + ["observed"]
             self.data_processed_columns[column] = self.data_processed_columns[column][selected_features]
 
-    def rolling_models(self, train_ratio: float = 0.9, n_runs: int = 10) -> None:
+    def generate_splits(self, data: pd.DataFrame):
+        periods = data.index.to_period(self.cv_freq)
+        unique_periods = periods.unique()
+
+        for i in range(1, len(unique_periods)):
+
+            if self.cv_method == "expanding":
+                train_mask = periods < unique_periods[i]
+                test_mask = periods == unique_periods[i]
+
+            elif self.cv_method == "sliding":
+                train_mask = periods == unique_periods[i - 1]
+                test_mask = periods == unique_periods[i]
+
+            else:
+                raise ValueError(f"Unknown CV method: {self.cv_method}")
+
+            yield data.loc[train_mask], data.loc[test_mask]
+
+    def rolling_models(self) -> None:
         self.models_metadata = dict()
+        
         for column in self.processed_columns:
             self.models_metadata[column] = list()
 
             data = self.data_processed_columns[column].dropna()
             x = data.drop(columns=["observed"])
             y = data["observed"]
-            # размер тестового окна
-            train_size = int(len(data) * train_ratio)
-            step = (len(data) - train_size) // n_runs
-            if step <= 0:
-                continue
 
-            for i in range(n_runs):
-                # граница train-выборки
-                end_train = train_size + i * step
-                train = data.iloc[:end_train]
-                test = data.iloc[end_train:end_train + step]
-
-                if len(train) == 0 or len(test) == 0:
-                    continue
+            for train, test in self.generate_splits(data):
 
                 # разделение на признаки и таргет
                 x_train = train.drop(columns=["observed"])
@@ -496,32 +509,38 @@ class TimeSeries:
                 y_test = test["observed"]
 
                 # LinearRegression
-                model = LinearRegression()
-                model.fit(x_train, y_train)
-
-                y_prediction = model.predict(x_test)
-
-                self.models_metadata[column].append(
-                    ModelMetadata(
-                        model_type='LinearRegression',
-                        model=model,
-                        time_column=self.time_column,
-                        x_test=x_test,
-                        y_test=y_test,
-                        x=x,
-                        y=y,
-                        y_prediction=y_prediction,
-                        metrics={
-                            "MAE": mean_absolute_error(y_test, y_prediction),
-                            "MAPE": mean_absolute_percentage_error(y_test, y_prediction),
-                            "WAPE": np.sum(np.abs(y_test - y_prediction)) / np.sum(y_test),
-                            "FA_MAPE": 1 - mean_absolute_percentage_error(y_test, y_prediction),
-                            "FA_WAPE": 1 - np.sum(np.abs(y_test - y_prediction)) / np.sum(y_test)
-                        }
-                    )
-                )
+                #model = LinearRegression()
+                #model.fit(x_train, y_train)
+                #
+                #y_prediction = model.predict(x_test)
+                #
+                #self.models_metadata[column].append(
+                #    ModelMetadata(
+                #        model_type='LinearRegression',
+                #        model=model,
+                #        time_column=self.time_column,
+                #        x_test=x_test,
+                #        y_test=y_test,
+                #        x=x,
+                #        y=y,
+                #        y_prediction=y_prediction,
+                #        metrics={
+                #            "MAE": mean_absolute_error(y_test, y_prediction),
+                #            "MAPE": mean_absolute_percentage_error(y_test, y_prediction),
+                #            "WAPE": np.sum(np.abs(y_test - y_prediction)) / np.sum(y_test),
+                #            "FA_MAPE": 1 - mean_absolute_percentage_error(y_test, y_prediction),
+                #            "FA_WAPE": 1 - np.sum(np.abs(y_test - y_prediction)) / np.sum(y_test)
+                #        }
+                #    )
+                #)
 
                 # XGBRegressor
+                split_idx = int(len(x_train) * 0.8)
+                x_tr = x_train.iloc[:split_idx]
+                y_tr = y_train.iloc[:split_idx]
+                x_val = x_train.iloc[split_idx:]
+                y_val = y_train.iloc[split_idx:]
+                
                 model = xgb.XGBRegressor(
                     n_estimators=self.n_estimators,
                     max_depth=self.max_depth,
@@ -534,8 +553,8 @@ class TimeSeries:
                 )
                 model
                 model.fit(
-                    x_train, y_train,
-                    eval_set=[(x_test, y_test)],
+                    x_tr, y_tr,
+                    eval_set=[(x_val, y_val)],
                     verbose=False
                 )
 
@@ -577,6 +596,7 @@ class TimeSeries:
 
         plt.xlabel(self.time_column)
         plt.tight_layout()
+        plt.xticks(rotation=45)
         plt.show()
 
     def get_effective_model(self, column_name: str, metric_name: str = 'MAE') -> ModelMetadata:

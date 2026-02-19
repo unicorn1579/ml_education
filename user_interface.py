@@ -28,7 +28,10 @@ class InputParams(NamedTuple):
     random_state: int = None
     eval_metric: str = None
     early_stopping_rounds: int = None
-
+    train_ratio: float = None
+    cv_method: str = None
+    cv_freq: str = None
+    
 def process_cli() -> InputParams:
     """
     Параметры пользовательского интерфейса
@@ -134,7 +137,10 @@ def process_cli() -> InputParams:
         colsample_bytree=args.colsample_bytree,
         random_state=args.random_state,
         eval_metric=args.eval_metric,
-        early_stopping_rounds=args.early_stopping_rounds
+        early_stopping_rounds=args.early_stopping_rounds,
+        train_ratio=args.train_ratio,
+        cv_method=args.cv_method,
+        cv_freq=args.cv_freq
     )
 
     return params
